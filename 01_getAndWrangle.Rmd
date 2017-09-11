@@ -1,0 +1,125 @@
+---
+title: "Swiss abroad & dual citizen"
+author: "Duc-Quang Nguyen | swissinfo.ch"
+date: " 2017"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    theme: simplex
+---
+## Txt
+
+* [To get the country centroids](https://gis.stackexchange.com/questions/71921/list-of-central-coordinates-for-all-countries)
+
+## Data
+
+## Related
+
+
+```{r setup, include=FALSE}
+xls.file <- "data/Auslandschweizerstatistik_2016_FINAL.xlsx"
+
+library(tidyverse)
+library(scales)
+library(magrittr)
+library(countrycode)
+library(swiMap)
+library(swiTheme)
+
+### Mapping 
+library(rgeos)
+library(rworldmap)
+
+### Interactive 
+library(htmltools)
+library(leaflet.minicharts)
+library(swiRcharts)
+```
+
+```{r data load & wrangle}
+xls.read <- readxl::read_xlsx(xls.file, skip = 6)
+
+# column to keep. Keep the second column for filtering condition
+colname.sub <- c('X__1', 'X__2', 'Aktuell', 'Aktuell__1', 'Aktuell__2', '<18__1', '18 - 65', '>65')
+names(colname.sub) <- c('country', 'consulate', 'Total', 'swissonly', 'dual', 'lt18', '18_65', 'gt65')
+
+data <- xls.read %>% 
+  select(one_of(colname.sub)) %>%
+  filter(!is.na(X__2) & X__2 != "Total")
+colnames(data) <- names(colname.sub)
+
+# Sum the values by country of residence, discarding consulate
+data %<>% select(-consulate) %>%
+  group_by(country) %>%
+  mutate_all(as.numeric) %>% ungroup() %>%
+  group_by(country) %>%
+  summarise_all(sum, na.rm = T)
+
+## hack: replace some islands by the county name
+# renameCountry <- structure(
+#   c('Insel Man', 'Jungferninseln (UK)', 'Kaimaninseln', 'Sint Maarten (Niederlande)'),
+#   names = c('Vereinigtes Königreich', 'Vereinigtes Königreich', 'Cayman Islands', 'Niederlande')
+# )
+data %<>% mutate(rcountry = case_when(
+  country == 'Insel Man' ~ 'Vereinigtes Königreich',
+  country == 'Jungferninseln (UK)' ~ 'Vereinigtes Königreich',
+  country == 'Kaimaninseln' ~ 'Cayman Islands',
+  country == 'Sint Maarten (Niederlande)' ~ 'Niederlande',
+  TRUE ~ country
+  )
+)
+data %<>% select(-country) %>% rename( country = rcountry) %>%
+  select(country, everything())
+
+# Get the iso2 country code
+data %<>% mutate(iso3 = countrycode(country, origin = "country.name.de", "iso3c")) 
+data[which(data$country == "Kosovo"), 'iso3'] <- "UNK"
+stopifnot(!is.na(data$iso3))
+#data %>% filter(is.na(iso3))
+
+# Aggregate again by country
+data %<>% group_by(country, iso3) %>%
+    summarise_all(sum, na.rm = T) %>% ungroup()
+
+# hack Liechtenstein has no age split, asign 
+
+# run checks
+stopifnot(data$Total == data$swissonly + data$dual)
+#stopifnot(data$Total == data$lt18 + data$`18_65` + data$`gt65`)
+
+```
+
+```{r geocode data}
+# map to lon lat https://gis.stackexchange.com/questions/71921/list-of-central-coordinates-for-all-countries
+library(rgeos)
+library(rworldmap)
+
+# get world map
+wmap <- getMap(resolution="low")
+centroids <- gCentroid(wmap, byid=TRUE)
+df <- as.data.frame(centroids)
+df <- tibble(NAME = rownames(df), lon = df$x, lat = df$y)
+
+metad <- wmap@data %>% select(GEOUNIT, ISO3) %>% 
+  mutate_all(as.character) %>% rename(NAME = GEOUNIT)
+
+df <- left_join(df, metad) %>%
+  select(-NAME) %>% rename(iso3 = ISO3)
+
+data <- left_join(data, df)
+
+toGeoCode <- data %>% 
+  filter(is.na(lon) & is.na(lat)) 
+if(toGeoCode > 0) {
+  library(ggmap)
+  lonlat <- do.call(rbind, lapply(toGeoCode$country, function(country) data.frame(country=country, geocode(country))))
+
+  idx <- which(is.na(data$lon) & is.na(data$lat))
+  data[idx,c('lon', 'lat')] <- lonlat[match(data[idx,'country'] %>% unlist(use.names = F), lonlat$country), c('lon', 'lat')]  
+}
+
+stopifnot(any(!is.na(data$lat)))
+write_csv(data, "input/swissAbroad_geocoded.csv")
+
+```

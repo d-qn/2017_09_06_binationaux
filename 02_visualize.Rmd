@@ -1,0 +1,169 @@
+---
+title: "Map Swiss abroad"
+author: "Duc-Quang Nguyen | swissinfo.ch"
+date: " 2017"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    theme: simplex
+---
+
+## Ressources
+
+* [leaflet minichart tuto](https://cran.r-project.org/web/packages/leaflet.minicharts/vignettes/introduction.html)
+
+
+## Txt
+
+#### Snippets
+
+## Data
+
+## Related
+
+
+```{r setup, include=FALSE}
+data.file <- "input/swissAbroad_geocoded.csv"
+translation.file <- "input/Swiss and Dual citizen abroad map - Sheet1.csv"
+  
+  
+library(tidyverse)
+library(scales)
+library(magrittr)
+library(countrycode)
+library(swiMap)
+library(swiTheme)
+
+### Interactive 
+library(htmltools)
+library(leaflet.minicharts)
+library(swiRcharts)
+
+```
+
+```{r data load & wrangle}
+data.read <- read_csv(data.file)
+
+txt <- loadTranslation(translation.file)
+
+#
+data.read %>% filter(duplicated(iso3))
+
+
+# resum the values by iso3
+data <- data.read %>% group_by(iso3) %>%
+  summarise(
+    Total = sum(Total, na.rm = T),
+    swissonly = sum(swissonly, na.rm = T),
+    dual = sum(dual, na.rm = T),
+    lt18 = sum(lt18, na.rm = T),
+    `18_65` = sum(`18_65`, na.rm = T),
+    gt65 = sum(gt65, na.rm = T)
+  ) %>% ungroup()
+data <- left_join(data, data.read %>% select(iso3, lon, lat) %>% filter(!duplicated(iso3)))
+stopifnot(sum(data$Total) == sum(data.read$Total))
+  
+# get switzerland map
+require(rgdal)
+require(rgeos)
+require(maptools)
+require(rmapshaper)
+
+path.ch <- getPathShp('CH', year = 2016)
+ch <- readOGR(path.ch, layer = 'country')
+ch <- spTransform(ch, CRS("+init=epsg:4326"))
+
+# compress geo data https://rstudio.github.io/leaflet/shapes.html
+ch_small <- rmapshaper::ms_simplify(ch)
+object.size(ch_small)
+object.size(ch)
+
+```
+
+
+```{r interactive map}
+library(leaflet)
+
+tilesURL <- 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}'
+#tilesURL <- 'http://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png'
+
+# https://stackoverflow.com/questions/36365897/r-leaflet-zoomcontrol-option
+basemap <- leaflet(width = "100%", height = "507px", 
+                   options = leafletOptions(
+                     minZoom = 2, maxZoom = 5, attributionControl = FALSE)) %>%
+  addTiles(tilesURL)
+
+#colors <- c("#b15953", "#4c6570")
+colors <- c("#72302f", "#d18768")
+
+
+lang <- 'FR'
+
+for (lang in colnames(txt)) {
+  dd <- data
+  dd$geo <- countryTranslation(dd$iso3, lang)[,2]
+  
+  
+  if(lang == 'AR') {
+    topP <- paste0('<div align=\"right\"><strong>', dd$geo, "</strong><br>")
+  } else {
+    topP <- paste0('<strong>', dd$geo, "</strong><br>")
+  }
+  popup <- paste0(
+    topP, "<small><strong>", dd$Total, "</strong> ", txt['swiss', lang], 
+    '<ul type="square">',
+    '<li>', txt['swissonly', lang], ": ", dd$swissonly, 
+    " (", round((dd$swissonly / dd$Total) * 100), '%)</li>',
+    '<li>', txt['dual', lang], ": ", dd$dual,
+    " (", round((dd$dual / dd$Total) * 100), '%)</li>',
+    '</ul></small>', ifelse(lang == 'AR', "</div>", "")
+  )
+  
+  map <- basemap %>%
+    addPolygons(data = ch_small, weight = 0,
+                stroke = F, fillOpacity = 0.95, smoothFactor = 0.8,
+                color = "#193442") %>% 
+    addMinicharts(
+      dd$lon, dd$lat,
+      type = "pie",
+      chartdata = dd[, c("swissonly", "dual")], 
+      colorPalette = colors, 
+      opacity = 0.8,
+      width = 75 * sqrt(dd$Total) / sqrt(max(dd$Total)), 
+      popup = popupArgs(html = popup)
+    ) %>%
+    setView(9, 40, zoom = 3) 
+
+  output.html <- "map_swissDualCitizenAbroad_2016.html"
+  footer <- paste0("swissinfo.ch | ", txt['source',lang], ": ", txt['source.name',lang], " | ",
+                   txt['code',lang], ": ",  htmlLink("https://github.com/cran/leaflet.minicharts", txt['code.name',lang]), 
+                   ' | Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ')
+  
+  save_html(
+    tags$html(
+      tags$head(includeHTML("styles.html")),
+      tags$body(    
+        h2(HTML( txt["main.title", lang])),
+        div(class = "descr", HTML( paste0('<img src="https://interactive.swissinfo.ch/assets/Interactive_icon.svg.png" width="12" align="top">&nbsp; ', txt["descr", lang]))),
+        div(class="graphic", map),
+        div(id = "cite", HTML(footer))#,
+        #HTML(iframeresizer)
+      )
+    ), file = output.html, libdir = "js", background = "#D0CFD4")     
+  
+  original <- list.files("js", "leaflet.css", full.names = T, recursive = T)
+  file.copy(list.files(system.file("extdata", package="swiRcharts"), 'leaflet.css', full.names = T), original, overwrite = T)    
+}
+
+
+```
+
+```{r analyse age groups}
+ddd <- data %>% mutate(shareRetired = (gt65 / Total) * 100 ) %>%
+  arrange(desc(Total, shareRetired))
+
+sum(ddd$gt65) / sum(ddd$Total)
+
+
+```

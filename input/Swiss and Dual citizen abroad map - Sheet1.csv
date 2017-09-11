@@ -1,0 +1,10 @@
+code,EN,FR,DE,IT,PT,AR,RU,ES,JA,ZH
+main.title,,Où vivent les Suisses de l'étranger?,,,,,,,,
+descr,,"Pays de résidence des Suisses de l'étranger en 2016, avec la distinction entre ceux ayant <span style=""color:#72302f;font-weight:bold;font-family:Open Sans Condensed;"">uniquement la nationalité Suisse</span> et les <span style=""color:#d18768; font-weight:bold;font-family:Open Sans Condensed;"">binationaux</span>.",,,,,,,,
+swissonly,,uniquement Suisses,,,,,,,,
+dual,,binationaux,,,,,,,,
+swiss,,Suisses,,,,,,,,
+source,Source,source,Quelle,Fonte,fonte,المصدر,Источник,Fuente,出典,来源
+source.name,,Département fédéral des affaires étrangères,,,,,,,,
+code,Code,code,Code,Codice,código,الرمز,Код,código,コード,代码
+code.name,R leaflet.minicharts,R leaflet.minicharts,R leaflet.minicharts,R leaflet.minicharts,R leaflet.minicharts,R leaflet.minicharts,R leaflet.minicharts,R leaflet.minicharts,R leaflet.minicharts,R leaflet.minicharts
